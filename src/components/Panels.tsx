@@ -6,7 +6,7 @@ import { PART_NAMES, useStore, type Slot, type Tool } from '../store';
 /* ---------------------------------- Tools --------------------------------- */
 
 const TOOLS: { id: Tool; label: string; key: string; hint: string }[] = [
-  { id: 'select', label: 'AI select', key: 'S', hint: 'Tap a part of the model. Alt/right-click to exclude an area.' },
+  { id: 'select', label: 'Select', key: 'S', hint: 'Tap a part of the model. Alt/right-click to exclude an area.' },
   { id: 'brush', label: 'Brush', key: 'B', hint: 'Paint extra area into the selected part.' },
   { id: 'erase', label: 'Erase', key: 'E', hint: 'Remove area from the selected part.' },
   { id: 'pan', label: 'Pan', key: 'H', hint: 'Drag to move. Scroll to zoom. Hold Space to pan from any tool.' },
@@ -25,6 +25,17 @@ export function ToolsPanel() {
   const setLevel = useStore((s) => s.setLevel);
   const undoPoint = useStore((s) => s.undoPoint);
   const clearPoints = useStore((s) => s.clearPoints);
+  const selector = useStore((s) => s.selector);
+  const lowMemory = useStore((s) => s.lowMemory);
+
+  const chooseSelector = (s: 'ai' | 'fill') => {
+    if (s === selector) return;
+    if (
+      s === 'ai' && lowMemory &&
+      !confirm('The AI selector needs a lot of memory and may crash on phones and tablets. If it does, the page reloads and switches back to Smart fill. Try it?')
+    ) return;
+    useStore.getState().setSelector(s);
+  };
 
   return (
     <section className="panel">
@@ -46,6 +57,23 @@ export function ToolsPanel() {
             <button className={pointLabel === 0 ? 'on' : ''} onClick={() => setPointLabel(0)}>Exclude</button>
           </div>
         </div>
+      )}
+
+      {tool === 'select' && (
+        <>
+          <div className="row">
+            <span className="label">Selector</span>
+            <div className="seg small">
+              <button className={selector === 'ai' ? 'on' : ''} onClick={() => chooseSelector('ai')}>AI</button>
+              <button className={selector === 'fill' ? 'on' : ''} onClick={() => chooseSelector('fill')}>Smart fill</button>
+            </div>
+          </div>
+          <p className="hint">
+            {selector === 'ai'
+              ? 'AI finds whole parts, even on a primed model. Needs a computer’s memory.'
+              : 'Smart fill spreads from your tap through similar colour and stops at edges. Works on any device; best on painted models.'}
+          </p>
+        </>
       )}
 
       {(tool === 'brush' || tool === 'erase') && (

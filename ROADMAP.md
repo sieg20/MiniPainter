@@ -15,6 +15,9 @@
 - Touch: pinch to zoom (also pans), one-finger drag pans in AI select, tap to select;
   a second finger cancels a half-drawn brush stroke; compact phone header
 
+- Phones: the AI analysis needs 1–2 GB and crashed mobile browsers, so phones/tablets default to
+  "Smart fill" (colour + edge region growing, no AI); AI can be switched on, and a crash during
+  analysis auto-switches back instead of reload-looping. Phones use 1200px working images.
 - Live at https://sieg20.github.io/MiniPainter/ (GitHub Pages, redeploys on every push to main)
 
 ## Next

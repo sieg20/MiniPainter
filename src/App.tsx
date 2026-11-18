@@ -125,6 +125,10 @@ function UploadButton({ label, className }: { label: string; className?: string 
 function SamStatusBadge() {
   const status = useStore((s) => s.samStatus);
   const detail = useStore((s) => s.samDetail);
+  const selector = useStore((s) => s.selector);
+  if (selector === 'fill') {
+    return <span className="status ready" title="Smart fill selector (AI off)"><i />Smart fill selector</span>;
+  }
   const text =
     status === 'loading' ? detail || 'Loading AI selector…'
     : status === 'embedding' ? 'Analysing photo…'
@@ -189,7 +193,7 @@ function Welcome() {
   const restoring = useStore((s) => s.restoring);
   useEffect(() => {
     // Start fetching the AI model while the user picks a photo.
-    sam.preload();
+    if (useStore.getState().selector === 'ai') sam.preload();
   }, []);
   if (restoring) {
     return (
@@ -210,7 +214,7 @@ function Welcome() {
         <ul className="tips">
           <li><strong>Best results:</strong> a primed (grey or white) model, plain background, even light.</li>
           <li>Already-painted models work too — the lightness is remapped so dark armour can go light.</li>
-          <li>Photos stay on your device. The AI selector model downloads once and is then cached.</li>
+          <li>Photos stay on your device. On computers an AI selector finds parts (it downloads once); phones use the lighter Smart fill.</li>
         </ul>
         <SamStatusBadge />
       </div>

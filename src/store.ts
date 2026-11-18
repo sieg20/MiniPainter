@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { rgb8ToOkL } from './lib/color';
+import { aiCrashedLastTime, aiPref, isLowMemoryDevice } from './lib/device';
 import { rebuildPart } from './lib/mask';
+import { smartFill } from './lib/smartfill';
 import * as persist from './lib/persist';
 import type { ProjectMeta } from './lib/persist';
 import { sam, type SamStatus } from './lib/sam';
@@ -66,7 +68,17 @@ export interface Scheme {
   recipes: Record<string, Recipe>;
 }
 
-const MAX_SIDE = 1600;
+export type Selector = 'ai' | 'fill';
+
+const LOW_MEMORY = isLowMemoryDevice();
+// Phones get smaller working images: every part keeps several full-size masks.
+const MAX_SIDE = LOW_MEMORY ? 1200 : 1600;
+
+// If the last visit's AI analysis crashed the page, switch the AI off for this device.
+const AI_CRASHED = aiCrashedLastTime();
+if (AI_CRASHED) aiPref.set('off');
+const pref = aiPref.get();
+const INITIAL_SELECTOR: Selector = pref === 'on' ? 'ai' : pref === 'off' || LOW_MEMORY ? 'fill' : 'ai';
 
 export const PART_NAMES = [
   'Armour', 'Trim', 'Helmet', 'Eye lenses', 'Cloth / robes', 'Leather / pouches',
@@ -107,6 +119,10 @@ interface State {
   projects: ProjectMeta[];
   /** True while a saved project is being opened. */
   restoring: boolean;
+  /** What a tap uses to find a part: the AI model, or the light colour-based Smart fill. */
+  selector: Selector;
+  lowMemory: boolean;
+  setSelector(s: Selector): void;
 
   loadFile(file: File): Promise<void>;
   closeImage(): Promise<void>;
@@ -138,7 +154,7 @@ interface State {
   saveScheme(name: string): void;
   applyScheme(id: string): void;
   deleteScheme(id: string): void;
-  notify(msg: string): void;
+  notify(msg: string, ms?: number): void;
 }
 
 export const useStore = create<State>((set, get) => {
@@ -160,7 +176,7 @@ export const useStore = create<State>((set, get) => {
     }
     const pointsAtRequest = part.points;
     set({ busy: true });
-    const res = await sam.decode(part.points);
+    const res = get().selector === 'ai' ? await sam.decode(part.points) : await smartFill(img, part.points);
     set({ busy: false });
     if (!res) return;
     const current = get().parts.find((p) => p.id === id);
@@ -195,6 +211,18 @@ export const useStore = create<State>((set, get) => {
     projectId: null,
     projects: [],
     restoring: !!persist.lastOpen.get(),
+    selector: INITIAL_SELECTOR,
+    lowMemory: LOW_MEMORY,
+
+    setSelector(selector) {
+      aiPref.set(selector === 'ai' ? 'on' : 'off');
+      set({ selector });
+      const img = get().image;
+      if (selector === 'ai') {
+        if (img) sam.embed(img.rgba, img.w, img.h);
+        else sam.preload();
+      }
+    },
 
     async loadFile(file) {
       if (!file.type.startsWith('image/')) {
@@ -217,7 +245,7 @@ export const useStore = create<State>((set, get) => {
       const id = nextId('m');
       const name = stripExt(file.name);
       set({ image: { w, h, rgba, L, name }, projectId: id, parts: [], selectedId: null, schemes: [], tool: 'select' });
-      sam.embed(rgba, w, h);
+      if (get().selector === 'ai') sam.embed(rgba, w, h);
       const now = Date.now();
       try {
         await persist.createProject({ id, name, w, h, created: now, updated: now, partCount: 0, thumb: null }, rgba);
@@ -256,7 +284,7 @@ export const useStore = create<State>((set, get) => {
         const selectedId = parts.some((p) => p.id === work.selectedId) ? work.selectedId : null;
         set({ image: img, projectId: id, parts, schemes: work.schemes, selectedId, tool: 'select', restoring: false });
         persist.lastOpen.set(id);
-        sam.embed(rgba, img.w, img.h);
+        if (get().selector === 'ai') sam.embed(rgba, img.w, img.h);
       } catch (e) {
         console.error(e);
         set({ restoring: false });
@@ -409,10 +437,10 @@ export const useStore = create<State>((set, get) => {
 
     deleteScheme: (id) => set((s) => ({ schemes: s.schemes.filter((x) => x.id !== id) })),
 
-    notify(msg) {
+    notify(msg, ms = 3200) {
       set({ toast: msg });
       window.clearTimeout(toastTimer);
-      toastTimer = window.setTimeout(() => set({ toast: null }), 3200);
+      toastTimer = window.setTimeout(() => set({ toast: null }), ms);
     },
   };
 });
@@ -462,3 +490,10 @@ document.addEventListener('visibilitychange', () => document.visibilityState ===
 
 // Handy for debugging in the browser console during development.
 if (import.meta.env.DEV) (window as unknown as { __store: typeof useStore }).__store = useStore;
+
+if (AI_CRASHED) {
+  useStore.getState().notify(
+    'The AI selector ran out of memory on this device and the page reloaded, so it has been switched to Smart fill. Tap a part to select it.',
+    9000,
+  );
+}
