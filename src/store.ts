@@ -325,11 +325,12 @@ export const useStore = create<State>((set, get) => {
         id, name, points: [], samMasks: [], level: 0, add: null, erase: null,
         mask: null, alpha: null, bbox: null, stats: null, recipe: newRecipe(),
       };
-      set((s) => ({ parts: [...s.parts, part], selectedId: id, activeSlot: 'base' }));
+      set((s) => ({ parts: [...s.parts, part], selectedId: id, activeSlot: 'base', showMask: true }));
       return id;
     },
 
-    selectPart: (id) => set({ selectedId: id }),
+    // Show the selection whenever a part is picked, so an empty or hidden one isn't mistaken for a broken selector.
+    selectPart: (id) => set((s) => ({ selectedId: id, showMask: id !== null && id !== s.selectedId ? true : s.showMask })),
     renamePart: (id, name) => updatePart(id, (p) => ({ ...p, name })),
     deletePart: (id) =>
       set((s) => ({ parts: s.parts.filter((p) => p.id !== id), selectedId: s.selectedId === id ? null : s.selectedId })),
@@ -350,6 +351,7 @@ export const useStore = create<State>((set, get) => {
         part = selected()!;
       }
       const id = part.id;
+      set({ showMask: true });
       updatePart(id, (p) => ({ ...p, points: [...p.points, pt] }));
       await runDecode(id);
     },
