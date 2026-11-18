@@ -15,6 +15,8 @@
 - Touch: pinch to zoom (also pans), one-finger drag pans in AI select, tap to select;
   a second finger cancels a half-drawn brush stroke; compact phone header
 
+- Live at https://sieg20.github.io/MiniPainter/ (GitHub Pages, redeploys on every push to main)
+
 ## Next
 - Test and tune on real miniature photos (selection quality, colour realism)
 
