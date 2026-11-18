@@ -24,7 +24,9 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - run: npm ci
+      # Skip install scripts: onnxruntime-node/sharp (pulled in by transformers.js) try to
+      # download native Linux binaries, which the browser build never uses.
+      - run: npm ci --ignore-scripts
       - run: npm run build
       - uses: actions/upload-pages-artifact@v3
         with:
