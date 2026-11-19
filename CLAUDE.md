@@ -48,7 +48,7 @@ SlimSAM (`Xenova/slimsam-77-uniform`) in a Web Worker. No backend: everything ru
 | `src/lib/history.ts` | Undo/redo entries: state snapshots (share immutable parts; masks no longer in use get RLE-compacted) and per-stroke patches (only the changed rectangle) |
 | `src/lib/persist.ts` | IndexedDB saving (projects / images / work stores), RLE-encoded masks, thumbnails |
 | `src/lib/color.ts` | sRGB↔OKLab, colour parsing (`#abc`, `#aabbcc`, `rgb()`, `r,g,b`) |
-| `src/data/paints.ts` | Paint library: full current Citadel range (281), starter Vallejo / Army Painter sets |
+| `src/data/paints.ts` | Paint library: full current Citadel range (281), starter Vallejo set (Army Painter was removed; old `army-painter:*` ids resolve as custom colours) |
 
 ## Decisions to respect
 

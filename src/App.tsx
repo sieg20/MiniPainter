@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { PaintLibrary, PartsPanel, RecipePanel, SchemesPanel, ToolsPanel } from './components/Panels';
 import { Stage } from './components/Stage';
-import { resolvePaint, type Paint } from './data/paints';
+import { isCustom, resolvePaint, type Paint } from './data/paints';
 import { sam } from './lib/sam';
 import type { ProjectMeta } from './lib/persist';
 import { useStore } from './store';
@@ -328,7 +328,7 @@ function ShoppingList({ onClose }: { onClose: () => void }) {
   }
   const groups = new Map<string, { paint: Paint; uses: string[] }[]>();
   for (const [ref, e] of used) {
-    const g = ref.startsWith('#') ? 'Custom mixes' : e.paint.brand;
+    const g = isCustom(ref) ? 'Custom mixes' : e.paint.brand;
     groups.set(g, [...(groups.get(g) ?? []), e]);
   }
   const text = [...groups]

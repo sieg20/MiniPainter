@@ -8,7 +8,7 @@
 // hand-set to how they look over a light primer, since they are translucent.
 
 export type PaintType = 'base' | 'layer' | 'shade' | 'contrast' | 'metallic' | 'technical' | 'dry';
-export type Brand = 'Citadel' | 'Vallejo' | 'Army Painter';
+export type Brand = 'Citadel' | 'Vallejo';
 
 export interface Paint {
   id: string;
@@ -339,36 +339,6 @@ const vallejo: Row[] = [
   ['Brassy Brass', 'metallic', '#a07a3a'],
 ];
 
-const armyPainter: Row[] = [
-  ['Matt Black', 'base', '#151515'],
-  ['Matt White', 'base', '#f5f5f5'],
-  ['Pure Red', 'base', '#b4161b'],
-  ['Dragon Red', 'base', '#8c1414'],
-  ['Lava Orange', 'base', '#e05a1a'],
-  ['Daemonic Yellow', 'base', '#f2c200'],
-  ['Greenskin', 'base', '#3f7a2f'],
-  ['Angel Green', 'base', '#1d4a2a'],
-  ['Ultramarine Blue', 'base', '#1b3c8c'],
-  ['Crystal Blue', 'layer', '#2f80c8'],
-  ['Uniform Grey', 'base', '#6a6e70'],
-  ['Ash Grey', 'layer', '#b0b5b2'],
-  ['Skeleton Bone', 'layer', '#cfc08a'],
-  ['Oak Brown', 'base', '#3e2a20'],
-  ['Leather Brown', 'base', '#6a4527'],
-  ['Tanned Flesh', 'base', '#9a5a3a'],
-  ['Barbarian Flesh', 'layer', '#c88866'],
-  ['Dark Tone', 'shade', '#1a1614'],
-  ['Strong Tone', 'shade', '#4e3420'],
-  ['Soft Tone', 'shade', '#8a6a3a'],
-  ['Red Tone', 'shade', '#7a1a1a'],
-  ['Blue Tone', 'shade', '#1a2e5a'],
-  ['Green Tone', 'shade', '#2a4a2a'],
-  ['Purple Tone', 'shade', '#4a2a5a'],
-  ['Plate Mail Metal', 'metallic', '#9a9ea0'],
-  ['Gun Metal', 'metallic', '#4e5356'],
-  ['Greedy Gold', 'metallic', '#b5903a'],
-];
-
 function build(brand: Brand, rows: Row[]): Paint[] {
   const prefix = brand.toLowerCase().replace(/\s+/g, '-');
   const seen = new Set<string>();
@@ -384,17 +354,48 @@ function build(brand: Brand, rows: Row[]): Paint[] {
 export const PAINTS: Paint[] = [
   ...build('Citadel', citadel),
   ...build('Vallejo', vallejo),
-  ...build('Army Painter', armyPainter),
 ];
 
-export const BRANDS: Brand[] = ['Citadel', 'Vallejo', 'Army Painter'];
+export const BRANDS: Brand[] = ['Citadel', 'Vallejo'];
 export const TYPES: PaintType[] = ['base', 'layer', 'shade', 'contrast', 'metallic', 'technical', 'dry'];
 
 const byId = new Map(PAINTS.map((p) => [p.id, p]));
 
+/** Army Painter paints were removed; old saved recipes that used them keep their colour as a custom mix. */
+const REMOVED: Record<string, string> = {
+  'army-painter:matt-black': '#151515',
+  'army-painter:matt-white': '#f5f5f5',
+  'army-painter:pure-red': '#b4161b',
+  'army-painter:dragon-red': '#8c1414',
+  'army-painter:lava-orange': '#e05a1a',
+  'army-painter:daemonic-yellow': '#f2c200',
+  'army-painter:greenskin': '#3f7a2f',
+  'army-painter:angel-green': '#1d4a2a',
+  'army-painter:ultramarine-blue': '#1b3c8c',
+  'army-painter:crystal-blue': '#2f80c8',
+  'army-painter:uniform-grey': '#6a6e70',
+  'army-painter:ash-grey': '#b0b5b2',
+  'army-painter:skeleton-bone': '#cfc08a',
+  'army-painter:oak-brown': '#3e2a20',
+  'army-painter:leather-brown': '#6a4527',
+  'army-painter:tanned-flesh': '#9a5a3a',
+  'army-painter:barbarian-flesh': '#c88866',
+  'army-painter:dark-tone': '#1a1614',
+  'army-painter:strong-tone': '#4e3420',
+  'army-painter:soft-tone': '#8a6a3a',
+  'army-painter:red-tone': '#7a1a1a',
+  'army-painter:blue-tone': '#1a2e5a',
+  'army-painter:green-tone': '#2a4a2a',
+  'army-painter:purple-tone': '#4a2a5a',
+  'army-painter:plate-mail-metal': '#9a9ea0',
+  'army-painter:gun-metal': '#4e5356',
+  'army-painter:greedy-gold': '#b5903a',
+};
+
 /** A colour reference is either a paint id or a custom "#rrggbb" mix. */
 export function resolvePaint(ref: string | null): Paint | null {
   if (!ref) return null;
+  if (REMOVED[ref]) ref = REMOVED[ref];
   if (ref.startsWith('#')) {
     return { id: ref, name: `Custom ${ref.toUpperCase()}`, brand: 'Citadel', type: 'base', hex: ref };
   }
@@ -402,5 +403,5 @@ export function resolvePaint(ref: string | null): Paint | null {
 }
 
 export function isCustom(ref: string | null): boolean {
-  return !!ref && ref.startsWith('#');
+  return !!ref && (ref.startsWith('#') || ref in REMOVED);
 }

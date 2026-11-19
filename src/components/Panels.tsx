@@ -427,7 +427,7 @@ export function PaintLibrary() {
             title={`${p.name} — ${p.brand} ${p.type}`}
           >
             <span className="paint-name">{p.name}</span>
-            <span className="paint-meta">{p.brand === 'Army Painter' ? 'AP' : p.brand} · {p.type}</span>
+            <span className="paint-meta">{p.brand} · {p.type}</span>
           </button>
         ))}
         {list.length === 0 && <p className="hint">No paints match.</p>}
