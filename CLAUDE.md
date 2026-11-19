@@ -45,6 +45,7 @@ SlimSAM (`Xenova/slimsam-77-uniform`) in a Web Worker. No backend: everything ru
 | `src/lib/sam.ts` / `samWorker.ts` | AI selector worker client / worker (WebGPU fp32, falls back to wasm q8) |
 | `src/lib/smartfill.ts` | "Smart fill": non-AI selector — region growing in OKLab that follows shading but stops at sharp edges; returns 3 sizes like SAM |
 | `src/lib/device.ts` | Low-memory/phone detection, AI on/off preference, crash flag |
+| `src/lib/history.ts` | Undo/redo entries: state snapshots (share immutable parts; masks no longer in use get RLE-compacted) and per-stroke patches (only the changed rectangle) |
 | `src/lib/persist.ts` | IndexedDB saving (projects / images / work stores), RLE-encoded masks, thumbnails |
 | `src/lib/color.ts` | sRGB↔OKLab, colour parsing (`#abc`, `#aabbcc`, `rgb()`, `r,g,b`) |
 | `src/data/paints.ts` | Paint library: full current Citadel range (281), starter Vallejo / Army Painter sets |
@@ -69,6 +70,10 @@ SlimSAM (`Xenova/slimsam-77-uniform`) in a Web Worker. No backend: everything ru
   the next load switches to Smart fill instead of crash-looping. Phones use 1200px working images (desktop 1600).
 - **Brush layers (`part.add` / `part.erase`) are mutated in place** during a stroke; `commitBrush`
   publishes the change. Because of that, persist.ts never caches their RLE encoding (it does cache AI masks).
+- **Undo:** every user-facing change to parts/schemes must call `record(label, key?)` in `store.ts`
+  *before* changing state (same `key` within 1.5 s merges, e.g. slider drags). Brush strokes are
+  recorded by `brushLayers` (copies layers) + `commitBrush` (stores the changed rectangle);
+  `cancelBrush` throws a stroke away without recording. History resets when a model is opened/closed.
 - **Autosave** watches `parts` / `schemes` / `selectedId` and saves 700 ms later; `saveNow()` flushes.
   Switching projects (`openProject`, `loadFile`, `closeImage`) flushes first. Refreshing reopens the
   last project (`localStorage['mini-painter:last']`).

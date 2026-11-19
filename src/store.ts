@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { rgb8ToOkL } from './lib/color';
 import { aiCrashedLastTime, aiPref, isLowMemoryDevice } from './lib/device';
+import { compactEntry, makeStroke, restoreParts, swapStroke, type Entry, type StateEntry } from './lib/history';
 import { rebuildPart } from './lib/mask';
 import { smartFill } from './lib/smartfill';
 import * as persist from './lib/persist';
@@ -99,6 +100,13 @@ function lightnessOf(rgba: Uint8ClampedArray, n: number): Float32Array {
 
 const stripExt = (name: string) => name.replace(/\.[^.]+$/, '') || 'My model';
 
+// Undo/redo stacks (see lib/history.ts). Kept outside React state: only their top labels are rendered.
+const past: Entry[] = [];
+const future: Entry[] = [];
+const HISTORY_LIMIT = LOW_MEMORY ? 40 : 100;
+/** Layer copies from the start of the current brush stroke, for undo and for cancelling. */
+let strokeBefore: { id: string; add: Uint8Array; erase: Uint8Array } | null = null;
+
 interface State {
   image: Img | null;
   parts: Part[];
@@ -123,6 +131,11 @@ interface State {
   selector: Selector;
   lowMemory: boolean;
   setSelector(s: Selector): void;
+  /** Labels of the next undo / redo step, or null when there's nothing to undo / redo. */
+  undoLabel: string | null;
+  redoLabel: string | null;
+  undo(): void;
+  redo(): void;
 
   loadFile(file: File): Promise<void>;
   closeImage(): Promise<void>;
@@ -137,11 +150,14 @@ interface State {
   deletePart(id: string): void;
   movePart(id: string, dir: -1 | 1): void;
   addPoint(pt: Pt): Promise<void>;
-  undoPoint(): Promise<void>;
   clearPoints(): void;
   setLevel(level: number): void;
+  /** Starts a stroke: returns the layers to paint into (edited in place). */
   brushLayers(id: string, mode: 'brush' | 'erase'): { paint: Uint8Array; other: Uint8Array } | null;
+  /** Ends a stroke: records it for undo and rebuilds the part. */
   commitBrush(id: string): void;
+  /** Throws away the stroke in progress (e.g. a second finger turned it into a pinch). */
+  cancelBrush(id: string): void;
   setTool(t: Tool): void;
   setPointLabel(l: 0 | 1): void;
   setBrushSize(n: number): void;
@@ -165,6 +181,80 @@ export const useStore = create<State>((set, get) => {
     const { parts, selectedId } = get();
     return parts.find((p) => p.id === selectedId) ?? null;
   };
+
+  // ---- Undo history ----
+  const syncHistory = () =>
+    set({ undoLabel: past[past.length - 1]?.label ?? null, redoLabel: future[future.length - 1]?.label ?? null });
+
+  const snapshot = (label: string, key?: string): StateEntry => {
+    const { parts, schemes, selectedId } = get();
+    return { kind: 'state', label, key, time: Date.now(), parts, schemes, selectedId };
+  };
+
+  const push = (e: Entry) => {
+    const cur = get().parts;
+    for (const x of past) compactEntry(x, cur);
+    for (const x of future) compactEntry(x, cur);
+    past.push(e);
+    if (past.length > HISTORY_LIMIT) past.shift();
+    future.length = 0;
+    syncHistory();
+  };
+
+  /** Call before an undoable change. Same-key calls within 1.5 s (slider drags, typing) merge into one step. */
+  const record = (label: string, key?: string) => {
+    const top = past[past.length - 1];
+    if (key && top?.kind === 'state' && top.key === key && Date.now() - top.time < 1500 && !future.length) {
+      top.time = Date.now();
+      return;
+    }
+    push(snapshot(label, key));
+  };
+
+  const resetHistory = () => {
+    past.length = 0;
+    future.length = 0;
+    strokeBefore = null;
+    syncHistory();
+  };
+
+  const applyStroke = (e: Extract<Entry, { kind: 'stroke' }>, img: Img) => {
+    const part = get().parts.find((p) => p.id === e.partId);
+    if (!part) return;
+    const n = img.w * img.h;
+    const add = (part.add ??= new Uint8Array(n));
+    const erase = (part.erase ??= new Uint8Array(n));
+    swapStroke(e, img.w, add, erase);
+    updatePart(e.partId, (p) => rebuildPart(p, img));
+  };
+
+  /** Moves one step from `from` to `to`, applying it. */
+  const step = (from: Entry[], to: Entry[], verb: string) => {
+    const img = get().image;
+    const e = from.pop();
+    if (!e || !img) return;
+    if (e.kind === 'state') {
+      to.push(snapshot(e.label));
+      set({ parts: restoreParts(e.parts, img), schemes: e.schemes, selectedId: e.selectedId, busy: false });
+    } else {
+      applyStroke(e, img);
+      to.push(e);
+    }
+    syncHistory();
+    get().notify(`${verb}: ${e.label}`, 1800);
+  };
+
+  function createPart(): string {
+    const id = nextId('p');
+    const used = new Set(get().parts.map((p) => p.name));
+    const name = PART_NAMES.find((n) => !used.has(n)) ?? `Part ${get().parts.length + 1}`;
+    const part: Part = {
+      id, name, points: [], samMasks: [], level: 0, add: null, erase: null,
+      mask: null, alpha: null, bbox: null, stats: null, recipe: newRecipe(),
+    };
+    set((s) => ({ parts: [...s.parts, part], selectedId: id, activeSlot: 'base', showMask: true }));
+    return id;
+  }
 
   async function runDecode(id: string) {
     const img = get().image;
@@ -213,6 +303,10 @@ export const useStore = create<State>((set, get) => {
     restoring: !!persist.lastOpen.get(),
     selector: INITIAL_SELECTOR,
     lowMemory: LOW_MEMORY,
+    undoLabel: null,
+    redoLabel: null,
+    undo: () => step(past, future, 'Undone'),
+    redo: () => step(future, past, 'Redone'),
 
     setSelector(selector) {
       aiPref.set(selector === 'ai' ? 'on' : 'off');
@@ -245,6 +339,7 @@ export const useStore = create<State>((set, get) => {
       const id = nextId('m');
       const name = stripExt(file.name);
       set({ image: { w, h, rgba, L, name }, projectId: id, parts: [], selectedId: null, schemes: [], tool: 'select' });
+      resetHistory();
       if (get().selector === 'ai') sam.embed(rgba, w, h);
       const now = Date.now();
       try {
@@ -261,6 +356,7 @@ export const useStore = create<State>((set, get) => {
       await get().saveNow();
       persist.lastOpen.set(null);
       set({ image: null, projectId: null, parts: [], selectedId: null, schemes: [] });
+      resetHistory();
       await get().refreshProjects();
     },
 
@@ -283,6 +379,7 @@ export const useStore = create<State>((set, get) => {
         const parts = work.parts.map((sp) => rebuildPart(persist.fromSaved(sp, n), img));
         const selectedId = parts.some((p) => p.id === work.selectedId) ? work.selectedId : null;
         set({ image: img, projectId: id, parts, schemes: work.schemes, selectedId, tool: 'select', restoring: false });
+        resetHistory();
         persist.lastOpen.set(id);
         if (get().selector === 'ai') sam.embed(rgba, img.w, img.h);
       } catch (e) {
@@ -318,36 +415,37 @@ export const useStore = create<State>((set, get) => {
     saveNow: () => flushSave(),
 
     newPart() {
-      const id = nextId('p');
-      const used = new Set(get().parts.map((p) => p.name));
-      const name = PART_NAMES.find((n) => !used.has(n)) ?? `Part ${get().parts.length + 1}`;
-      const part: Part = {
-        id, name, points: [], samMasks: [], level: 0, add: null, erase: null,
-        mask: null, alpha: null, bbox: null, stats: null, recipe: newRecipe(),
-      };
-      set((s) => ({ parts: [...s.parts, part], selectedId: id, activeSlot: 'base', showMask: true }));
-      return id;
+      record('New part');
+      return createPart();
     },
 
     // Show the selection whenever a part is picked, so an empty or hidden one isn't mistaken for a broken selector.
     selectPart: (id) => set((s) => ({ selectedId: id, showMask: id !== null && id !== s.selectedId ? true : s.showMask })),
-    renamePart: (id, name) => updatePart(id, (p) => ({ ...p, name })),
-    deletePart: (id) =>
-      set((s) => ({ parts: s.parts.filter((p) => p.id !== id), selectedId: s.selectedId === id ? null : s.selectedId })),
-    movePart: (id, dir) =>
-      set((s) => {
-        const i = s.parts.findIndex((p) => p.id === id);
-        const j = i + dir;
-        if (i < 0 || j < 0 || j >= s.parts.length) return s;
-        const parts = [...s.parts];
-        [parts[i], parts[j]] = [parts[j], parts[i]];
-        return { parts };
-      }),
+    renamePart: (id, name) => {
+      record('Rename part', `rename:${id}`);
+      updatePart(id, (p) => ({ ...p, name }));
+    },
+    deletePart: (id) => {
+      const part = get().parts.find((p) => p.id === id);
+      if (!part) return;
+      record(`Delete “${part.name}”`);
+      set((s) => ({ parts: s.parts.filter((p) => p.id !== id), selectedId: s.selectedId === id ? null : s.selectedId }));
+    },
+    movePart: (id, dir) => {
+      const parts = [...get().parts];
+      const i = parts.findIndex((p) => p.id === id);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= parts.length) return;
+      record('Reorder parts');
+      [parts[i], parts[j]] = [parts[j], parts[i]];
+      set({ parts });
+    },
 
     async addPoint(pt) {
+      record('Tap to select');
       let part = selected();
       if (!part) {
-        get().newPart();
+        createPart();
         part = selected()!;
       }
       const id = part.id;
@@ -356,24 +454,19 @@ export const useStore = create<State>((set, get) => {
       await runDecode(id);
     },
 
-    async undoPoint() {
-      const part = selected();
-      if (!part || !part.points.length) return;
-      updatePart(part.id, (p) => ({ ...p, points: p.points.slice(0, -1) }));
-      await runDecode(part.id);
-    },
-
     clearPoints() {
       const part = selected();
       const img = get().image;
       if (!part || !img) return;
+      record('Clear area');
       updatePart(part.id, (p) => rebuildPart({ ...p, points: [], samMasks: [], add: null, erase: null }, img));
     },
 
     setLevel(level) {
       const part = selected();
       const img = get().image;
-      if (!part || !img) return;
+      if (!part || !img || part.level === level) return;
+      record('Area size');
       updatePart(part.id, (p) => rebuildPart({ ...p, level }, img));
     },
 
@@ -385,13 +478,32 @@ export const useStore = create<State>((set, get) => {
       // Mutated in place during a stroke; commitBrush() publishes the result.
       const add = (part.add ??= new Uint8Array(n));
       const erase = (part.erase ??= new Uint8Array(n));
+      strokeBefore = { id, add: add.slice(), erase: erase.slice() };
       return mode === 'brush' ? { paint: add, other: erase } : { paint: erase, other: add };
     },
 
     commitBrush(id) {
       const img = get().image;
-      if (!img) return;
+      const part = get().parts.find((p) => p.id === id);
+      if (!img || !part) return;
+      if (strokeBefore?.id === id && part.add && part.erase) {
+        const label = get().tool === 'erase' ? 'Erase stroke' : 'Brush stroke';
+        const e = makeStroke(label, id, img.w, img.h, strokeBefore, { add: part.add, erase: part.erase });
+        if (e) push(e);
+      }
+      strokeBefore = null;
       updatePart(id, (p) => rebuildPart(p, img));
+    },
+
+    cancelBrush(id) {
+      const img = get().image;
+      const part = get().parts.find((p) => p.id === id);
+      if (strokeBefore?.id === id && part?.add && part.erase) {
+        part.add.set(strokeBefore.add);
+        part.erase.set(strokeBefore.erase);
+      }
+      strokeBefore = null;
+      if (img && part) updatePart(id, (p) => rebuildPart(p, img));
     },
 
     setTool: (tool) => set({ tool }),
@@ -406,24 +518,30 @@ export const useStore = create<State>((set, get) => {
         return;
       }
       const slot = get().activeSlot;
+      record('Apply paint');
       updatePart(part.id, (p) => ({ ...p, recipe: { ...p.recipe, [slot]: ref } }));
       if (!part.mask) get().notify('Paint set — now tap the model to choose where it goes.');
     },
 
     clearSlot(slot) {
       const part = selected();
-      if (part) updatePart(part.id, (p) => ({ ...p, recipe: { ...p.recipe, [slot]: null } }));
+      if (!part || !part.recipe[slot]) return;
+      record('Remove paint');
+      updatePart(part.id, (p) => ({ ...p, recipe: { ...p.recipe, [slot]: null } }));
     },
 
     setRecipeValue(key, v) {
       const part = selected();
-      if (part) updatePart(part.id, (p) => ({ ...p, recipe: { ...p.recipe, [key]: v } }));
+      if (!part || part.recipe[key] === v) return;
+      record('Adjust slider', `slider:${part.id}:${key}`);
+      updatePart(part.id, (p) => ({ ...p, recipe: { ...p.recipe, [key]: v } }));
     },
 
     setShowOriginal: (showOriginal) => set({ showOriginal }),
     setShowMask: (showMask) => set({ showMask }),
 
     saveScheme(name) {
+      record('Save scheme');
       const recipes: Record<string, Recipe> = {};
       for (const p of get().parts) recipes[p.id] = { ...p.recipe };
       set((s) => ({ schemes: [...s.schemes, { id: nextId('s'), name, recipes }] }));
@@ -432,12 +550,18 @@ export const useStore = create<State>((set, get) => {
     applyScheme(id) {
       const scheme = get().schemes.find((s) => s.id === id);
       if (!scheme) return;
+      record(`Apply “${scheme.name}”`);
       set((s) => ({
         parts: s.parts.map((p) => (scheme.recipes[p.id] ? { ...p, recipe: { ...scheme.recipes[p.id] } } : p)),
       }));
     },
 
-    deleteScheme: (id) => set((s) => ({ schemes: s.schemes.filter((x) => x.id !== id) })),
+    deleteScheme: (id) => {
+      const scheme = get().schemes.find((s) => s.id === id);
+      if (!scheme) return;
+      record(`Delete scheme “${scheme.name}”`);
+      set((s) => ({ schemes: s.schemes.filter((x) => x.id !== id) }));
+    },
 
     notify(msg, ms = 3200) {
       set({ toast: msg });
@@ -445,6 +569,7 @@ export const useStore = create<State>((set, get) => {
       toastTimer = window.setTimeout(() => set({ toast: null }), ms);
     },
   };
+
 });
 
 sam.onStatus((status, detail) => useStore.setState({ samStatus: status, samDetail: detail ?? '' }));

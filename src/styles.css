@@ -247,3 +247,11 @@ button.compare { user-select: none; -webkit-user-select: none; -webkit-touch-cal
   .header-buttons::-webkit-scrollbar { display: none; }
   .header-buttons button { flex: none; white-space: nowrap; padding: 6px 10px; font-size: 13px; }
 }
+
+/* − / + buttons beside sliders */
+.stepper { gap: 6px; }
+button.step {
+  flex: none; width: 28px; height: 28px; padding: 0; font-size: 17px; line-height: 1;
+  display: grid; place-items: center; touch-action: manipulation;
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+}

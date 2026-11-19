@@ -34,8 +34,6 @@ export function Stage() {
     | {
         kind: 'brush'; pointerId: number; id: string; mode: 'brush' | 'erase'; last: { x: number; y: number };
         paint: Uint8Array; other: Uint8Array;
-        /** Layer copies taken at the start of a touch stroke, so a pinch can cancel it. */
-        undo?: { paint: Uint8Array; other: Uint8Array };
       }
     // A finger is down in select mode: a tap adds a point, a drag pans.
     | { kind: 'tap'; pointerId: number; sx: number; sy: number; vx: number; vy: number }
@@ -184,12 +182,8 @@ export function Stage() {
   const cancelStroke = () => {
     const d = drag.current;
     if (d?.kind !== 'brush') return;
-    if (d.undo) {
-      d.paint.set(d.undo.paint);
-      d.other.set(d.undo.other);
-    }
     drag.current = null;
-    useStore.getState().commitBrush(d.id);
+    useStore.getState().cancelBrush(d.id); // restores the layers; not added to undo history
     drawOverlay(); // clears the stroke preview
   };
 
@@ -198,11 +192,10 @@ export function Stage() {
     const id = st.selectedId ?? st.newPart();
     const layers = useStore.getState().brushLayers(id, mode);
     if (!layers || !img) return;
-    const undo = e.pointerType === 'touch' ? { paint: layers.paint.slice(), other: layers.other.slice() } : undefined;
     const r = brushSize / 2;
     stamp(layers.paint, img.w, img.h, p.x, p.y, r, 1);
     stamp(layers.other, img.w, img.h, p.x, p.y, r, 0);
-    drag.current = { kind: 'brush', pointerId: e.pointerId, id, mode, last: p, ...layers, undo };
+    drag.current = { kind: 'brush', pointerId: e.pointerId, id, mode, last: p, ...layers };
     paintPreview(p, p, mode);
   };
 

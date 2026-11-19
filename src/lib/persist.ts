@@ -63,7 +63,7 @@ async function run<T>(mode: IDBTransactionMode, fn: (t: IDBTransaction) => IDBRe
 // AI masks never change after decoding, so their encodings are cached; brush layers are edited in place and are not.
 const rleCache = new WeakMap<Uint8Array, Uint32Array>();
 
-function encode(m: Uint8Array, cache: boolean): Uint32Array {
+export function encode(m: Uint8Array, cache: boolean): Uint32Array {
   const hit = cache && rleCache.get(m);
   if (hit) return hit;
   const runs: number[] = [];
@@ -84,7 +84,7 @@ function encode(m: Uint8Array, cache: boolean): Uint32Array {
   return out;
 }
 
-function decode(runs: Uint32Array, n: number, cache: boolean): Uint8Array {
+export function decode(runs: Uint32Array, n: number, cache: boolean): Uint8Array {
   const m = new Uint8Array(n);
   let i = 0;
   for (let r = 0; r < runs.length; r++) {

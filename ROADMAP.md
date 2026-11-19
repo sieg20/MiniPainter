@@ -18,6 +18,9 @@
 - Phones: the AI analysis needs 1–2 GB and crashed mobile browsers, so phones/tablets default to
   "Smart fill" (colour + edge region growing, no AI); AI can be switched on, and a crash during
   analysis auto-switches back instead of reload-looping. Phones use 1200px working images.
+- Undo / redo (header buttons, Ctrl+Z / Ctrl+Y) for parts, taps, paints, sliders, schemes and
+  each brush/erase stroke; history per open model, not saved across refreshes
+- − / + buttons on every slider (1% steps, hold to repeat)
 - Live at https://sieg20.github.io/MiniPainter/ (GitHub Pages, redeploys on every push to main)
 
 ## Next

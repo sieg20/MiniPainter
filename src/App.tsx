@@ -28,9 +28,15 @@ export default function App() {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       const st = useStore.getState();
       if (!st.image) return;
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) {
         e.preventDefault();
-        st.undoPoint();
+        st.redo();
+        return;
+      }
+      if (mod && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        st.undo();
         return;
       }
       if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -164,6 +170,7 @@ function Header({ onShoppingList }: { onShoppingList: () => void }) {
         <div className="header-actions">
           <SamStatusBadge />
           <div className="header-buttons">
+          <UndoRedo />
           <button
             className="compare"
             onPointerDown={() => setShowOriginal(true)}
@@ -219,6 +226,22 @@ function Welcome() {
         <SamStatusBadge />
       </div>
     </main>
+  );
+}
+
+function UndoRedo() {
+  const undoLabel = useStore((s) => s.undoLabel);
+  const redoLabel = useStore((s) => s.redoLabel);
+  const { undo, redo } = useStore.getState();
+  return (
+    <>
+      <button onClick={undo} disabled={!undoLabel} title={undoLabel ? `Undo: ${undoLabel} (Ctrl+Z)` : 'Nothing to undo'}>
+        ↶ Undo
+      </button>
+      <button onClick={redo} disabled={!redoLabel} title={redoLabel ? `Redo: ${redoLabel} (Ctrl+Y)` : 'Nothing to redo'}>
+        ↷ Redo
+      </button>
+    </>
   );
 }
 

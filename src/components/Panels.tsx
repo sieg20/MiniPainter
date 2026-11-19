@@ -1,7 +1,89 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { BRANDS, PAINTS, TYPES, isCustom, resolvePaint, type Brand, type PaintType } from '../data/paints';
 import { hexToRgbText, parseColor, textOn } from '../lib/color';
 import { PART_NAMES, useStore, type Slot, type Tool } from '../store';
+
+/* --------------------------------- Stepper -------------------------------- */
+
+/** Slider with − / + buttons for fine steps. Hold a button to keep stepping. */
+function Stepper(props: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  disabled?: boolean;
+  format: (v: number) => string;
+  onChange: (v: number) => void;
+}) {
+  const { label, value, min, max, step, disabled, format, onChange } = props;
+  const latest = useRef(value);
+  latest.current = value;
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  const timers = useRef<{ delay?: number; repeat?: number }>({});
+
+  const stop = () => {
+    window.clearTimeout(timers.current.delay);
+    window.clearInterval(timers.current.repeat);
+  };
+  useEffect(() => stop, []);
+
+  const bump = (dir: 1 | -1) => {
+    const v = Math.min(max, Math.max(min, +(latest.current + dir * step).toFixed(4)));
+    if (v === latest.current) return stop(); // reached the end
+    latest.current = v;
+    onChangeRef.current(v);
+  };
+
+  const button = (dir: 1 | -1) => (
+    <button
+      type="button"
+      className="step"
+      aria-label={`${dir < 0 ? 'Decrease' : 'Increase'} ${label}`}
+      title={`${dir < 0 ? 'Decrease' : 'Increase'} (hold to repeat)`}
+      disabled={disabled || (dir < 0 ? value <= min : value >= max)}
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        stop();
+        bump(dir);
+        timers.current.delay = window.setTimeout(() => {
+          timers.current.repeat = window.setInterval(() => bump(dir), 70);
+        }, 400);
+      }}
+      onPointerUp={stop}
+      onPointerLeave={stop}
+      onPointerCancel={stop}
+      onContextMenu={(e) => e.preventDefault()}
+      // Keyboard (Enter/Space) clicks have detail 0; pointer presses are handled above.
+      onClick={(e) => e.detail === 0 && bump(dir)}
+    >
+      {dir < 0 ? '−' : '+'}
+    </button>
+  );
+
+  return (
+    <div className="row stepper">
+      <span className="label">{label}</span>
+      {button(-1)}
+      <input
+        type="range"
+        aria-label={label}
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(+e.target.value)}
+      />
+      {button(1)}
+      <span className="num">{format(value)}</span>
+    </div>
+  );
+}
+
+const pct = (v: number) => `${Math.round(v * 100)}%`;
 
 /* ---------------------------------- Tools --------------------------------- */
 
@@ -23,7 +105,6 @@ export function ToolsPanel() {
   const setShowMask = useStore((s) => s.setShowMask);
   const part = useStore((s) => s.parts.find((p) => p.id === s.selectedId) ?? null);
   const setLevel = useStore((s) => s.setLevel);
-  const undoPoint = useStore((s) => s.undoPoint);
   const clearPoints = useStore((s) => s.clearPoints);
   const selector = useStore((s) => s.selector);
   const lowMemory = useStore((s) => s.lowMemory);
@@ -77,11 +158,7 @@ export function ToolsPanel() {
       )}
 
       {(tool === 'brush' || tool === 'erase') && (
-        <label className="row">
-          <span className="label">Size</span>
-          <input type="range" min={2} max={120} value={brushSize} onChange={(e) => setBrushSize(+e.target.value)} />
-          <span className="num">{brushSize}</span>
-        </label>
+        <Stepper label="Size" value={brushSize} min={2} max={120} step={1} format={String} onChange={setBrushSize} />
       )}
 
       {part && part.samMasks.length > 1 && (
@@ -99,7 +176,6 @@ export function ToolsPanel() {
 
       {part && (part.points.length > 0 || part.add) && (
         <div className="row">
-          <button className="ghost" onClick={undoPoint} disabled={!part.points.length}>Undo tap</button>
           <button className="ghost" onClick={clearPoints}>Clear area</button>
         </div>
       )}
@@ -229,21 +305,9 @@ export function RecipePanel() {
         slotLabel={slotLabel}
         onApply={applyPaint}
       />
-      <label className="row">
-        <span className="label">Shading</span>
-        <input type="range" min={0} max={2} step={0.05} value={r.depth} onChange={(e) => setRecipeValue('depth', +e.target.value)} />
-        <span className="num">{Math.round(r.depth * 100)}%</span>
-      </label>
-      <label className="row">
-        <span className="label">Wash</span>
-        <input type="range" min={0} max={1} step={0.05} value={r.shadeAmt} disabled={!r.shade} onChange={(e) => setRecipeValue('shadeAmt', +e.target.value)} />
-        <span className="num">{Math.round(r.shadeAmt * 100)}%</span>
-      </label>
-      <label className="row">
-        <span className="label">Highlight</span>
-        <input type="range" min={0} max={1} step={0.05} value={r.hiAmt} disabled={!r.highlight} onChange={(e) => setRecipeValue('hiAmt', +e.target.value)} />
-        <span className="num">{Math.round(r.hiAmt * 100)}%</span>
-      </label>
+      <Stepper label="Shading" value={r.depth} min={0} max={2} step={0.01} format={pct} onChange={(v) => setRecipeValue('depth', v)} />
+      <Stepper label="Wash" value={r.shadeAmt} min={0} max={1} step={0.01} disabled={!r.shade} format={pct} onChange={(v) => setRecipeValue('shadeAmt', v)} />
+      <Stepper label="Highlight" value={r.hiAmt} min={0} max={1} step={0.01} disabled={!r.highlight} format={pct} onChange={(v) => setRecipeValue('hiAmt', v)} />
     </section>
   );
 }
