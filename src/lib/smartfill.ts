@@ -13,7 +13,7 @@ const LEVELS = [
 /** Lightness counts less than colour, so shading inside one part doesn't stop the fill. */
 const L_WEIGHT = 0.4;
 
-interface Planes {
+export interface Planes {
   rgba: Uint8ClampedArray;
   L: Float32Array;
   A: Float32Array;
@@ -39,7 +39,7 @@ function blur3(src: Float32Array, w: number, h: number): Float32Array {
 }
 
 /** OKLab planes of the photo, lightly blurred so JPEG noise doesn't look like edges. */
-function planes(img: Img): Planes {
+export function planes(img: Img): Planes {
   if (cache && cache.rgba === img.rgba) return cache;
   const n = img.w * img.h;
   const L = new Float32Array(n), A = new Float32Array(n), B = new Float32Array(n);

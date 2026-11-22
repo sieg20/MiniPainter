@@ -4,6 +4,7 @@ import { aiCrashedLastTime, aiPref, isLowMemoryDevice } from './lib/device';
 import { compactEntry, makeStroke, restoreParts, swapStroke, type Entry, type StateEntry } from './lib/history';
 import { rebuildPart } from './lib/mask';
 import { smartFill } from './lib/smartfill';
+import { refineMask } from './lib/aiAssist';
 import * as persist from './lib/persist';
 import type { ProjectMeta } from './lib/persist';
 import { sam, type SamStatus } from './lib/sam';
@@ -266,7 +267,13 @@ export const useStore = create<State>((set, get) => {
     }
     const pointsAtRequest = part.points;
     set({ busy: true });
-    const res = get().selector === 'ai' ? await sam.decode(part.points) : await smartFill(img, part.points);
+    const ai = get().selector === 'ai';
+    const res = ai ? await sam.decode(part.points) : await smartFill(img, part.points);
+    if (res && ai) {
+      // Snap the AI's coarse edges to the photo's colours and edges.
+      const r = Math.max(2, Math.min(8, Math.round(sam.maskCell() * 1.5)));
+      res.masks = res.masks.map((m) => refineMask(img, m, r));
+    }
     set({ busy: false });
     if (!res) return;
     const current = get().parts.find((p) => p.id === id);

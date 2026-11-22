@@ -42,7 +42,8 @@ SlimSAM (`Xenova/slimsam-77-uniform`) in a Web Worker. No backend: everything ru
 | `src/App.tsx` | Header, start screen ("Your models" list), shortcuts, paste/drag-drop, paint shopping list |
 | `src/lib/recolor.ts` | Recolour engine in OKLab: keeps the photo's relative lightness (normalised per part, p3–p97), takes hue/chroma from the paint; wash pools in darks, highlight lifts brights; metallic/contrast tweaks |
 | `src/lib/mask.ts` | Combines AI/fill mask + brush add/erase layers → final mask, 1px feather, bbox, lightness stats |
-| `src/lib/sam.ts` / `samWorker.ts` | AI selector worker client / worker (WebGPU fp32, falls back to wasm q8) |
+| `src/lib/sam.ts` / `samWorker.ts` | AI selector worker client / worker (WebGPU fp32, falls back to wasm q8). The client crops the photo to the model before analysis and maps masks back; a tap outside the crop re-analyses the whole photo |
+| `src/lib/aiAssist.ts` | AI accuracy helpers: `subjectBox` (find the mini against the backdrop for the crop) and `refineMask` (snap the AI's coarse mask edges to the photo's colours; run on AI results only, never on Smart fill) |
 | `src/lib/smartfill.ts` | "Smart fill": non-AI selector — region growing in OKLab that follows shading but stops at sharp edges; returns 3 sizes like SAM |
 | `src/lib/device.ts` | Low-memory/phone detection, AI on/off preference, crash flag |
 | `src/lib/history.ts` | Undo/redo entries: state snapshots (share immutable parts; masks no longer in use get RLE-compacted) and per-stroke patches (only the changed rectangle) |
