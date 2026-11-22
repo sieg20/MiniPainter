@@ -558,3 +558,8 @@ export function resolvePaint(ref: string | null): Paint | null {
 export function isCustom(ref: string | null): boolean {
   return !!ref && (ref.startsWith('#') || ref in REMOVED);
 }
+
+/** Display name for a paint type ("tone" shows as "Tone Pro"). */
+export function typeLabel(t: PaintType): string {
+  return t === 'tone' ? 'Tone Pro' : t[0].toUpperCase() + t.slice(1);
+}

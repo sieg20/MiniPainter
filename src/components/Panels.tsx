@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { BRANDS, PAINTS, TYPES, isCustom, resolvePaint, type Brand, type PaintType } from '../data/paints';
+import { BRANDS, PAINTS, TYPES, isCustom, resolvePaint, typeLabel, type Brand, type PaintType } from '../data/paints';
 import { hexToRgbText, parseColor, textOn } from '../lib/color';
 import { PART_NAMES, useStore, type Slot, type Tool } from '../store';
 
@@ -413,7 +413,7 @@ export function PaintLibrary() {
       <div className="chips">
         {(['all', ...TYPES] as const).map((t) => (
           <button key={t} className={type === t ? 'on' : ''} onClick={() => setTypeOverride((o) => ({ ...o, [activeSlot]: t }))}>
-            {t === 'all' ? 'All types' : t[0].toUpperCase() + t.slice(1)}
+            {t === 'all' ? 'All types' : typeLabel(t)}
           </button>
         ))}
       </div>
@@ -424,10 +424,10 @@ export function PaintLibrary() {
             className={`paint ${current === p.id ? 'on' : ''}`}
             style={{ background: p.hex, color: textOn(p.hex) }}
             onClick={() => applyPaint(p.id)}
-            title={`${p.name} — ${p.brand} ${p.type}`}
+            title={`${p.name} — ${p.brand} ${typeLabel(p.type)}`}
           >
             <span className="paint-name">{p.name}</span>
-            <span className="paint-meta">{p.brand} · {p.type}</span>
+            <span className="paint-meta">{p.brand} · {typeLabel(p.type)}</span>
           </button>
         ))}
         {list.length === 0 && <p className="hint">No paints match.</p>}

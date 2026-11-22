@@ -5,7 +5,7 @@
 - AI tap-to-select parts (SlimSAM, runs in the browser; WebGPU with CPU fallback)
 - Brush / erase refinement, small/medium/large area options
 - Paint library: full current Citadel range (281 paints: Base, Layer, Shade, Contrast, Technical, Dry),
-  plus Warhammer Tone Pro (30 colours × 5 tones, "tone" filter; hex values sampled by thinned.app
+  plus Warhammer Tone Pro (30 colours × 5 tones, "Tone Pro" filter; hex values sampled by thinned.app
   from GW's chart — estimates) and a starter set of Vallejo — approximate colours (Army Painter removed)
 - Per-part recipe: base coat, wash, highlight, shading depth; metallic & contrast handling
 - Custom colours via picker, hex code (`#9A1115`, `#abc`) or RGB (`154, 17, 21`)

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { PaintLibrary, PartsPanel, RecipePanel, SchemesPanel, ToolsPanel } from './components/Panels';
 import { Stage } from './components/Stage';
-import { isCustom, resolvePaint, type Paint } from './data/paints';
+import { isCustom, resolvePaint, typeLabel, type Paint } from './data/paints';
 import { sam } from './lib/sam';
 import type { ProjectMeta } from './lib/persist';
 import { useStore } from './store';
@@ -353,7 +353,7 @@ function ShoppingList({ onClose }: { onClose: () => void }) {
                   {items.map((i) => (
                     <li key={i.paint.id}>
                       <span className="swatch" style={{ background: i.paint.hex }} />
-                      <span><strong>{i.paint.name}</strong> <small>{i.paint.type}</small><br /><small>{i.uses.join(', ')}</small></span>
+                      <span><strong>{i.paint.name}</strong> <small>{typeLabel(i.paint.type)}</small><br /><small>{i.uses.join(', ')}</small></span>
                     </li>
                   ))}
                 </ul>
