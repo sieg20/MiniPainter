@@ -22,7 +22,9 @@
 - Undo / redo (header buttons, Ctrl+Z / Ctrl+Y) for parts, taps, paints, sliders, schemes and
   each brush/erase stroke; history per open model, not saved across refreshes
 - Sharper AI selection: the AI analyses a crop around the mini (not the whole photo) and its mask
-  edges are snapped to the photo's colours; Smart fill unchanged. Tested on synthetic images only
+  edges are snapped to the photo's colours; each AI selection is trimmed to the tapped paint colour
+  (so a tap on a red panel no longer grabs its gold trim or the whole model); the default size avoids
+  "whole model" picks, which matters for models primed in one colour. Smart fill unchanged
 - − / + buttons on every slider (1% steps, hold to repeat)
 - Live at https://sieg20.github.io/MiniPainter/ (GitHub Pages, redeploys on every push to main)
 

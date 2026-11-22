@@ -108,6 +108,10 @@ export const sam = {
       ensureWorker().postMessage({ type: 'decode', id, points: local });
     });
   },
+  /** Pixel area of the region the AI analyses (the crop around the model, or the whole photo). */
+  viewArea(): number {
+    return photo ? photo.box.w * photo.box.h : 0;
+  },
   /** How many photo pixels one cell of the AI's 256×256 mask grid covers. */
   maskCell(): number {
     return photo ? Math.max(photo.box.w, photo.box.h) / 256 : 4;

@@ -5,7 +5,7 @@
 //  - refineMask: the AI's masks come from a 256×256 grid and have blobby edges;
 //    this re-decides a thin band along the edge using the photo's colours and
 //    edges (the same rules as Smart fill), keeping the AI's overall shape.
-import type { Img } from '../store';
+import type { Img, Pt } from '../store';
 import { rgb8ToOklab } from './color';
 import { planes } from './smartfill';
 
@@ -145,6 +145,7 @@ export function refineMask(img: Img, m: Uint8Array, r: number): Uint8Array {
   const allowed = morph(m, w, h, r, box, true);
   const { L, A, B } = planes(img);
   const LW = 0.5; // shading matters less than colour
+  const SAME2 = 0.04 * 0.04;
   const out = new Uint8Array(w * h);
   const s = r > 3 ? 2 : 1; // sample every other pixel in big windows
   for (let y = box.y0; y < box.y1; y++) {
@@ -161,11 +162,123 @@ export function refineMask(img: Img, m: Uint8Array, r: number): Uint8Array {
         }
       }
       if (!nI || !nO) { out[i] = m[i]; continue; }
-      const dI = ((L[i] - lI / nI) * LW) ** 2 + (A[i] - aI / nI) ** 2 + (B[i] - bI / nI) ** 2;
-      const dO = ((L[i] - lO / nO) * LW) ** 2 + (A[i] - aO / nO) ** 2 + (B[i] - bO / nO) ** 2;
+      lI /= nI; aI /= nI; bI /= nI; lO /= nO; aO /= nO; bO /= nO;
+      // Both sides look alike (e.g. a model primed in one colour): colour can't
+      // tell them apart, so keep the AI's own edge here.
+      if (((lI - lO) * LW) ** 2 + (aI - aO) ** 2 + (bI - bO) ** 2 < SAME2) { out[i] = m[i]; continue; }
+      const dI = ((L[i] - lI) * LW) ** 2 + (A[i] - aI) ** 2 + (B[i] - bI) ** 2;
+      const dO = ((L[i] - lO) * LW) ** 2 + (A[i] - aO) ** 2 + (B[i] - bO) ** 2;
       out[i] = dI <= dO ? 1 : 0;
     }
   }
   // Smooth single-pixel notches (closing, radius 1).
   return morph(morph(out, w, h, 1, box, true), w, h, 1, box, false);
+}
+
+/**
+ * Trims an AI mask to the paint colour that was tapped. The AI selects objects
+ * (a whole shoulder pad with its trim, or the whole model), but a paint area is one
+ * colour. Keeps mask pixels whose hue/chroma match a tapped colour, ignoring
+ * lightness (shading and metallic highlights), plus deep shadows and white
+ * highlights that have no colour of their own. Small holes (rivets, engraving) are
+ * filled, and only the area connected to a tap is kept.
+ * Falls back to the untouched mask when the tap has no clear match.
+ */
+export function colourGate(img: Img, m: Uint8Array, points: Pt[]): Uint8Array {
+  const { w, h } = img;
+  const { L, A, B } = planes(img);
+  const taps = points.filter((p) => p.label === 1).map((p) => {
+    const x = Math.min(w - 1, Math.max(0, Math.floor(p.x * w)));
+    const y = Math.min(h - 1, Math.max(0, Math.floor(p.y * h)));
+    return y * w + x;
+  });
+  if (!taps.length) return m;
+  // Reference colour per tap: median a/b over a small window (avoids a lone highlight pixel).
+  const med = (v: number[]) => v.sort((p, q) => p - q)[v.length >> 1];
+  const refs = taps.map((t) => {
+    const tx = t % w, ty = (t - tx) / w;
+    const as: number[] = [], bs: number[] = [];
+    for (let y = Math.max(0, ty - 4); y <= Math.min(h - 1, ty + 4); y++) {
+      for (let x = Math.max(0, tx - 4); x <= Math.min(w - 1, tx + 4); x++) {
+        as.push(A[y * w + x]);
+        bs.push(B[y * w + x]);
+      }
+    }
+    const a = med(as), b = med(bs);
+    return { a, b, c: Math.hypot(a, b), hue: Math.atan2(b, a) };
+  });
+  const HUE_WIDE = (35 * Math.PI) / 180, HUE_TIGHT = (20 * Math.PI) / 180;
+  const match = (i: number) => {
+    const a = A[i], b = B[i], c = Math.hypot(a, b), l = L[i];
+    for (const r of refs) {
+      if (r.c < 0.035) {
+        // Grey, black or white paint: anything with little colour.
+        if (c < Math.max(0.045, r.c + 0.025)) return true;
+      } else if (c < 0.025) {
+        // Colourless pixel on a coloured part: only shadows and glare count.
+        if (l < 0.25 || l > 0.88) return true;
+      } else {
+        // Strong colours have a reliable hue, so match them tightly (red vs bronze
+        // can be only ~30° apart); muted ones get more room. Chroma must be similar too.
+        let d = Math.abs(Math.atan2(b, a) - r.hue);
+        if (d > Math.PI) d = 2 * Math.PI - d;
+        const t = Math.min(1, Math.max(0, (r.c - 0.06) / 0.06));
+        const hueTol = HUE_WIDE - t * (HUE_WIDE - HUE_TIGHT);
+        const cMin = (0.3 + 0.15 * t) * r.c, cMax = Math.max(2.2 * r.c, r.c + 0.08);
+        if (d <= hueTol && c >= cMin && c <= cMax) return true;
+      }
+    }
+    return false;
+  };
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  const keep = new Uint8Array(w * h);
+  for (let i = 0; i < m.length; i++) {
+    if (!m[i] || !match(i)) continue;
+    keep[i] = 1;
+    const x = i % w, y = (i - x) / w;
+    if (x < x0) x0 = x;
+    if (x > x1) x1 = x;
+    if (y < y0) y0 = y;
+    if (y > y1) y1 = y;
+  }
+  if (x1 < 0) return m;
+  const box = { x0: Math.max(0, x0 - 3), y0: Math.max(0, y0 - 3), x1: Math.min(w, x1 + 4), y1: Math.min(h, y1 + 4) };
+  // Fill small holes, but never grow past the AI's own outline.
+  const closed = morph(morph(keep, w, h, 2, box, true), w, h, 2, box, false);
+  for (let i = 0; i < closed.length; i++) closed[i] &= m[i];
+  // Keep only what is connected to a tap.
+  const out = new Uint8Array(w * h);
+  const queue = new Int32Array(w * h);
+  let tail = 0;
+  for (const t of taps) {
+    // The tap itself may sit on a rivet or glint; start from the nearest kept pixel.
+    let s = -1;
+    const tx = t % w, ty = (t - tx) / w;
+    for (let rad = 0; rad <= 6 && s < 0; rad++) {
+      for (let y = Math.max(0, ty - rad); y <= Math.min(h - 1, ty + rad) && s < 0; y++) {
+        for (let x = Math.max(0, tx - rad); x <= Math.min(w - 1, tx + rad); x++) {
+          if (closed[y * w + x]) { s = y * w + x; break; }
+        }
+      }
+    }
+    if (s >= 0 && !out[s]) { out[s] = 1; queue[tail++] = s; }
+  }
+  if (!tail) return m;
+  let head = 0, n = 0;
+  while (head < tail) {
+    const c = queue[head++];
+    n++;
+    const x = c % w, y = (c - x) / w;
+    for (let dy = -1; dy <= 1; dy++) {
+      const yy = y + dy;
+      if (yy < 0 || yy >= h) continue;
+      for (let dx = -1; dx <= 1; dx++) {
+        const xx = x + dx;
+        if (xx < 0 || xx >= w) continue;
+        const j = yy * w + xx;
+        if (closed[j] && !out[j]) { out[j] = 1; queue[tail++] = j; }
+      }
+    }
+  }
+  return n < 20 ? m : out;
 }

@@ -4,7 +4,7 @@ import { aiCrashedLastTime, aiPref, isLowMemoryDevice } from './lib/device';
 import { compactEntry, makeStroke, restoreParts, swapStroke, type Entry, type StateEntry } from './lib/history';
 import { rebuildPart } from './lib/mask';
 import { smartFill } from './lib/smartfill';
-import { refineMask } from './lib/aiAssist';
+import { colourGate, refineMask } from './lib/aiAssist';
 import * as persist from './lib/persist';
 import type { ProjectMeta } from './lib/persist';
 import { sam, type SamStatus } from './lib/sam';
@@ -270,9 +270,9 @@ export const useStore = create<State>((set, get) => {
     const ai = get().selector === 'ai';
     const res = ai ? await sam.decode(part.points) : await smartFill(img, part.points);
     if (res && ai) {
-      // Snap the AI's coarse edges to the photo's colours and edges.
+      // Snap the AI's coarse edges to the photo, then trim each mask to the tapped paint colour.
       const r = Math.max(2, Math.min(8, Math.round(sam.maskCell() * 1.5)));
-      res.masks = res.masks.map((m) => refineMask(img, m, r));
+      res.masks = res.masks.map((m) => colourGate(img, refineMask(img, m, r), part.points));
     }
     set({ busy: false });
     if (!res) return;
@@ -286,7 +286,19 @@ export const useStore = create<State>((set, get) => {
         return { m, i, c, score: res.scores[i] };
       })
       .sort((a, b) => a.c - b.c);
-    const best = order.reduce((bi, o, i, arr) => (o.score > arr[bi].score ? i : bi), 0);
+    let best = order.reduce((bi, o, i, arr) => (o.score > arr[bi].score ? i : bi), 0);
+    if (ai && order.length === 3) {
+      // The AI is often most confident about the whole model, which is rarely the
+      // paint area wanted. Start from the middle size; switch only when another is
+      // clearly more confident, and never to a largest one that is both much bigger
+      // than the middle and a big share of the analysed area (likely the whole model).
+      best = 1;
+      const huge = 0.1 * sam.viewArea();
+      for (let k = 0; k < 3; k++) {
+        const dwarfs = k === 2 && order[2].c > 2 * order[1].c && order[2].c > huge;
+        if (!dwarfs && order[k].score > order[best].score + 0.05) best = k;
+      }
+    }
     updatePart(id, (p) => rebuildPart({ ...p, samMasks: order.map((o) => o.m), level: best }, img));
   }
 
